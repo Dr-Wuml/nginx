@@ -1,0 +1,52 @@
+2020/06/15 15:09:25 [stderr] 6870: nginx: sigaction(SIGHUP) successed !
+2020/06/15 15:09:25 [stderr] 6870: nginx: sigaction(SIGINT) successed !
+2020/06/15 15:09:25 [stderr] 6870: nginx: sigaction(SIGTERM) successed !
+2020/06/15 15:09:25 [stderr] 6870: nginx: sigaction(SIGCHLD) successed !
+2020/06/15 15:09:25 [stderr] 6870: nginx: sigaction(SIGQUIT) successed !
+2020/06/15 15:09:25 [stderr] 6870: nginx: sigaction(SIGIO) successed !
+2020/06/15 15:09:25 [stderr] 6870: nginx: sigaction(SIGSYS, SIG_IN) successed !
+2020/06/15 15:09:25 [emerg] 6870: ngx_daemon()中setsid()失败！！！ (1: Operation not permitted) 
+2020/06/15 15:09:25 [stderr] 6870: nginx: 程序退出，再见！
+2020/06/15 15:09:25 [stderr] 6871: haha--这是父进程，pid为6871
+2020/06/15 15:09:25 [stderr] 6872: nginx: CSocket::ngx_get_connection isock = 4.
+2020/06/15 15:09:25 [stderr] 6872: nginx: CSocket::ngx_get_connection c = 000000000177DF90.
+2020/06/15 15:09:25 [stderr] 6874: nginx: CSocket::ngx_get_connection isock = 4.
+2020/06/15 15:09:25 [stderr] 6874: nginx: CSocket::ngx_get_connection c = 000000000177DF90.
+2020/06/15 15:09:25 [stderr] 6875: nginx: CSocket::ngx_get_connection isock = 4.
+2020/06/15 15:09:25 [stderr] 6875: nginx: CSocket::ngx_get_connection c = 000000000177DF90.
+2020/06/15 15:09:25 [stderr] 6873: nginx: CSocket::ngx_get_connection isock = 4.
+2020/06/15 15:09:25 [stderr] 6873: nginx: CSocket::ngx_get_connection c = 000000000177DF90.
+2020/06/15 15:09:26 [notice] 6871: signal 17 (SIGCHLD) received from 6872
+2020/06/15 15:09:26 [alert] 6871: pid = 6872 exited on signal 11!
+2020/06/15 15:09:27 [stderr] 6871: haha--这是父进程，pid为6871
+2020/06/15 15:09:27 [notice] 6871: signal 17 (SIGCHLD) received from 6873
+2020/06/15 15:09:27 [alert] 6871: pid = 6873 exited on signal 11!
+2020/06/15 15:09:27 [alert] 6871: pid = 6874 exited on signal 11!
+2020/06/15 15:09:27 [alert] 6871: pid = 6875 exited on signal 11!
+2020/06/15 15:09:28 [stderr] 6871: haha--这是父进程，pid为6871
+2020/06/15 15:33:36 [stderr] 8770: nginx: sigaction(SIGHUP) successed !
+2020/06/15 15:33:36 [stderr] 8770: nginx: sigaction(SIGINT) successed !
+2020/06/15 15:33:36 [stderr] 8770: nginx: sigaction(SIGTERM) successed !
+2020/06/15 15:33:36 [stderr] 8770: nginx: sigaction(SIGCHLD) successed !
+2020/06/15 15:33:36 [stderr] 8770: nginx: sigaction(SIGQUIT) successed !
+2020/06/15 15:33:36 [stderr] 8770: nginx: sigaction(SIGIO) successed !
+2020/06/15 15:33:36 [stderr] 8770: nginx: sigaction(SIGSYS, SIG_IN) successed !
+2020/06/15 15:33:36 [emerg] 8770: ngx_daemon()中setsid()失败！！！ (1: Operation not permitted) 
+2020/06/15 15:33:36 [stderr] 8770: nginx: 程序退出，再见！
+2020/06/15 15:33:36 [stderr] 8771: haha--这是父进程，pid为8771
+2020/06/15 15:33:36 [stderr] 8772: nginx: CSocket::ngx_get_connection isock = 4.
+2020/06/15 15:33:36 [stderr] 8772: nginx: CSocket::ngx_get_connection c = 00000000023F0F90.
+2020/06/15 15:33:36 [stderr] 8773: nginx: CSocket::ngx_get_connection isock = 4.
+2020/06/15 15:33:36 [stderr] 8773: nginx: CSocket::ngx_get_connection c = 00000000023F0F90.
+2020/06/15 15:33:36 [stderr] 8774: nginx: CSocket::ngx_get_connection isock = 4.
+2020/06/15 15:33:36 [stderr] 8774: nginx: CSocket::ngx_get_connection c = 00000000023F0F90.
+2020/06/15 15:33:36 [stderr] 8775: nginx: CSocket::ngx_get_connection isock = 4.
+2020/06/15 15:33:36 [stderr] 8775: nginx: CSocket::ngx_get_connection c = 00000000023F0F90.
+2020/06/15 15:33:36 [notice] 8771: signal 17 (SIGCHLD) received from 8773
+2020/06/15 15:33:36 [alert] 8771: pid = 8773 exited on signal 11!
+2020/06/15 15:33:37 [stderr] 8771: haha--这是父进程，pid为8771
+2020/06/15 15:33:37 [notice] 8771: signal 17 (SIGCHLD) received from 8774
+2020/06/15 15:33:37 [alert] 8771: pid = 8772 exited on signal 11!
+2020/06/15 15:33:37 [alert] 8771: pid = 8774 exited on signal 11!
+2020/06/15 15:33:37 [alert] 8771: pid = 8775 exited on signal 11!
+2020/06/15 15:33:38 [stderr] 8771: haha--这是父进程，pid为8771
