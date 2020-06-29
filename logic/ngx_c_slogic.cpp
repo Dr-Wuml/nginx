@@ -21,7 +21,8 @@
 #include "ngx_c_memory.h"
 #include "ngx_c_crc32.h"
 #include "ngx_c_slogic.h"  
-#include "ngx_logiccomm.h"  
+#include "ngx_logiccomm.h" 
+#include "ngx_c_lockmutex.h"   
 
 typedef bool (CLogicSocket::*handler)(lpngx_connection_t pConn,              //连接池中连接的指针
 	                                  LPSTRUC_MSG_HEADER pMsgHeader,         //消息头指针
@@ -67,7 +68,7 @@ void CLogicSocket::threadRecvProcFunc(char *pMsgBuf)
 {
 	LPSTRUC_MSG_HEADER pMsgHeader = (LPSTRUC_MSG_HEADER)pMsgBuf;                   //消息头
 	LPCOMM_PKG_HEADER  pPkgHeader = (LPCOMM_PKG_HEADER)(pMsgBuf+m_iLenMsgHeader);  //包头
-	void *pPkgBody = NULL;
+	void *pPkgBody ;
 	unsigned short pkglen = ntohs(pPkgHeader->pkgLen);
 	
 	if(m_iLenPkgHeader == pkglen)
@@ -89,7 +90,7 @@ void CLogicSocket::threadRecvProcFunc(char *pMsgBuf)
 		int calccrc = CCRC32::GetInstance()->Get_CRC((unsigned char *)pPkgBody,pkglen - m_iLenPkgHeader);
 		if(calccrc != pPkgHeader->crc32)
 		{
-			//ngx_log_stderr(0,"CLogicSocket::threadRecvProcFunc()中CRC错误，丢弃数据!");    //正式代码中可以干掉这个信息
+			ngx_log_stderr(0,"CLogicSocket::threadRecvProcFunc()中CRC错误，丢弃数据!");    //正式代码中可以干掉这个信息
 			return; //crc错，直接丢弃
 		}	
 	}
@@ -123,6 +124,68 @@ void CLogicSocket::threadRecvProcFunc(char *pMsgBuf)
 //处理各种业务逻辑
 bool CLogicSocket::_HandleRegister(lpngx_connection_t pConn,LPSTRUC_MSG_HEADER pMsgHeader,char *pPkgBody,unsigned short iBodyLength)
 {
+	/*if(pPkgBody == NULL)
+	{
+		return false;
+	}
+	
+	int iRecvLen = sizeof(STRUCT_REGISTER);
+	if(iRecvLen != iBodyLength)
+	{
+		return false;
+	}
+	
+	CLock lock(&pConn->logicPorcMutex);
+	
+	LPSTRUCT_REGISTER pRecvInfo = (LPSTRUCT_REGISTER)pPkgBody;    //取得包体数据
+	
+    //回消息包应用
+	LPCOMM_PKG_HEADER pPkgHeader;
+	CMemory *pMemory  = CMemory::GetInstance();
+	CCRC32  *pCrc32   = CCRC32::GetInstance();
+	int     iSendLen  = sizeof(STRUCT_REGISTER);
+	char    *pSendBuf = (char *)pMemory->AllocMemory(m_iLenMsgHeader+m_iLenPkgHeader+iSendLen,false);
+	memcpy(pSendBuf,pMsgHeader,m_iLenMsgHeader);                  //拷贝消息头
+	pPkgHeader = (LPCOMM_PKG_HEADER)(pSendBuf+m_iLenMsgHeader);  //指向包头
+	pPkgHeader->msgCode = _CMD_REGISTER;                          //消息代码
+	pPkgHeader->msgCode = htons(pPkgHeader->msgCode);             //业务代码,本地序转网络序
+	pPkgHeader->pkgLen  = htons(m_iLenPkgHeader + iSendLen);      //包长度 包头+包体
+	
+	//构造包体
+	LPSTRUCT_REGISTER pSendInfo = (LPSTRUCT_REGISTER)(pSendBuf + m_iLenMsgHeader + m_iLenPkgHeader);
+	
+	//计算包体CRC32值
+	pPkgHeader->crc32 = pCrc32->Get_CRC((unsigned char*)pSendInfo,iSendLen);
+	pPkgHeader->crc32 = htonl(pPkgHeader->crc32);
+	//f)发送数据包
+    /*msgSend(p_sendbuf);
+    //如果时机OK才add_event
+    if(ngx_epoll_add_event(pConn->fd,                 //socket句柄
+                                0,1,              //读，写 ,这里读为1，表示客户端应该主动给我服务器发送消息，我服务器需要首先收到客户端的消息；
+                                0,//EPOLLET,      //其他补充标记【EPOLLET(高速模式，边缘触发ET)】
+                                                      //后续因为实际项目需要，我们采用LT模式【水平触发模式/低速模式】
+                                EPOLL_CTL_MOD,    //事件类型【增加，还有删除/修改】                                    
+                                pConn              //连接池中的连接
+                                ) == -1)
+                                {
+                                    //ngx_log_stderr(0,"111111111111!");
+                                }
+    */
+
+   /*
+    sleep(100);  //休息这么长时间
+    //如果连接回收了，则肯定是iCurrsequence不等了
+    if(pMsgHeader->iCurrsequence != pConn->iCurrsequence)
+    {
+        //应该是不等，因为这个插座已经被回收了
+        ngx_log_stderr(0,"插座不等,%L--%L",pMsgHeader->iCurrsequence,pConn->iCurrsequence);
+    }
+    else
+    {
+        ngx_log_stderr(0,"插座相等哦,%L--%L",pMsgHeader->iCurrsequence,pConn->iCurrsequence);
+    }*/        
+	
+	
     ngx_log_stderr(0,"执行了CLogicSocket::_HandleRegister()!");
     return true;
 }

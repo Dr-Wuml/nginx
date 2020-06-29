@@ -19,65 +19,63 @@
 #include "ngx_func.h"
 #include "ngx_c_socket.h"
 #include "ngx_c_memory.h"
-#include "ngx_comm.h"
-#include "ngx_c_threadpool.h"
 #include "ngx_c_lockmutex.h"  //自动释放互斥量的一个类
 //来数据时候的处理，当连接上有数据来的时候，本函数会被ngx_epoll_process_events()所调用  ,官方的类似函数为ngx_http_wait_request_handler();
-void CSocket::ngx_wait_request_handler(lpngx_connection_t c)
+void CSocket::ngx_wait_request_handler(lpngx_connection_t pConn)
 {  
-    ssize_t reco = recvproc(c,c->precvbuf,c->irecvlen);
+    ssize_t reco = recvproc(pConn,pConn->precvbuf,pConn->irecvlen);
     if(reco <= 0 )
     {
     	return;
     }
-    if(c->curStat == _PKG_HD_INIT)     
+    if(pConn->curStat == _PKG_HD_INIT)     
     {
     	if(reco == m_iLenPkgHeader)      //接收到完整包头
     	{
-    		ngx_wait_request_handler_proc_p1(c);
+    		ngx_wait_request_handler_proc_p1(pConn);
     	}
     	else
     	{
-    		c->curStat  = _PKG_HD_RECVING;
-    		c->precvbuf = c->precvbuf + reco;
-    		c->irecvlen = c->irecvlen - reco;
+    		pConn->curStat  = _PKG_HD_RECVING;
+    		pConn->precvbuf = pConn->precvbuf + reco;
+    		pConn->irecvlen = pConn->irecvlen - reco;
     	}
     }
-    else if(c->curStat == _PKG_HD_RECVING)
+    else if(pConn->curStat == _PKG_HD_RECVING)
     {
-    	if(c->irecvlen == reco)           //收到完整包头
+    	if(pConn->irecvlen == reco)           //收到完整包头
     	{
-    		ngx_wait_request_handler_proc_p1(c);
+    		ngx_wait_request_handler_proc_p1(pConn);
     	}
     	else
     	{
-    		c->precvbuf = c->precvbuf + reco;
-    		c->irecvlen = c->irecvlen - reco;
+    		pConn->precvbuf = pConn->precvbuf + reco;
+    		pConn->irecvlen = pConn->irecvlen - reco;
     	}
     }
-    else if(c->curStat == _PKG_BD_INIT)
+    else if(pConn->curStat == _PKG_BD_INIT)
     {
-    	if(reco = c->irecvlen)           //接收到完整包体
+    	if(reco = pConn->irecvlen)           //接收到完整包体
     	{
-    		ngx_wait_request_handler_proc_plast(c);
+    		ngx_wait_request_handler_proc_plast(pConn);
     	}
     	else
     	{
-    		c->curStat  = _PKG_BD_RECVING;
-    		c->precvbuf = c->precvbuf + reco;
-    		c->irecvlen = c->irecvlen - reco;
+    		pConn->curStat  = _PKG_BD_RECVING;
+    		pConn->precvbuf = pConn->precvbuf + reco;
+    		pConn->irecvlen = pConn->irecvlen - reco;
     	}
     }
-    else if(c->curStat == _PKG_BD_RECVING)
+    else if(pConn->curStat == _PKG_BD_RECVING)
     {
-    	if(c->irecvlen == reco)          //收到剩余所有包体
+    	if(pConn->irecvlen == reco)          //收到剩余所有包体
     	{
-    		ngx_wait_request_handler_proc_plast(c);
+    		ngx_wait_request_handler_proc_plast(pConn);
     	}
     	else
     	{
-    		c->precvbuf = c->precvbuf + reco;
-    		c->irecvlen = c->irecvlen - reco;
+    		pConn->precvbuf = pConn->precvbuf + reco;
+    		pConn->irecvlen = pConn->irecvlen - reco;
     	}
     } 
     return;
@@ -89,7 +87,13 @@ ssize_t CSocket::recvproc(lpngx_connection_t c,char *buff,ssize_t buflen)     //
 	n = recv(c->fd, buff, buflen, 0);
 	if(n == 0)                                      //客户端正常关闭 
 	{
-		ngx_close_connection(c);
+        //ngx_log_stderr(0,"连接被客户端正常关闭[4路挥手关闭]！");
+        //ngx_close_connection(c);
+        if(close(c->fd) == -1)
+        {
+            ngx_log_error_core(NGX_LOG_ALERT,errno,"CSocekt::recvproc()中close(%d)失败!",c->fd);  
+        }
+        inRecyConnectQueue(c);                      //放入延迟回收队列
 		return -1;
 	}
 	//客户端连接还在
@@ -107,88 +111,129 @@ ssize_t CSocket::recvproc(lpngx_connection_t c,char *buff,ssize_t buflen)     //
 		}
 		if(errno == ECONNRESET)
 		{
-			ngx_log_stderr(errno,"CSocket::recvproc()中errno == ECONNRESET成立，客户端非正常关闭！");
+			//ngx_log_stderr(errno,"CSocket::recvproc()中errno == ECONNRESET成立，客户端非正常关闭！");
 		}
 		else
 		{
 			ngx_log_stderr(errno,"CSocket::recvproc()中发生错误！");
 		}
 		//ngx_log_stderr(0,"连接被客户端 非 正常关闭！");
-		ngx_close_connection(c);
+		//ngx_close_connection(c);
+		if(close(c->fd) == -1)
+        {
+            ngx_log_error_core(NGX_LOG_ALERT,errno,"CSocekt::recvproc()中close_2(%d)失败!",c->fd);  
+        }
+        inRecyConnectQueue(c);
 		return -1;
 	}
 	return n;
 }
 
 //包处理阶段1添加消息头，存包头
-void CSocket::ngx_wait_request_handler_proc_p1(lpngx_connection_t c)
+void CSocket::ngx_wait_request_handler_proc_p1(lpngx_connection_t pConn)
 {
 	CMemory *pMemory = CMemory::GetInstance();
 	
 	LPCOMM_PKG_HEADER pPkgHeader;
-	pPkgHeader = (LPCOMM_PKG_HEADER)c->dataHeadInfo;
+	pPkgHeader = (LPCOMM_PKG_HEADER)pConn->dataHeadInfo;
 	unsigned short e_pkgLen;
 	e_pkgLen = ntohs(pPkgHeader->pkgLen);           //ntohs网络序转本机序,htons本机序转网络序
 	if(e_pkgLen < m_iLenPkgHeader)                  //报文长度小于包头长度
 	{
-		c->curStat  = _PKG_HD_INIT;
-		c->precvbuf = c->dataHeadInfo;
-		c->irecvlen = m_iLenPkgHeader;
+		pConn->curStat  = _PKG_HD_INIT;
+		pConn->precvbuf = pConn->dataHeadInfo;
+		pConn->irecvlen = m_iLenPkgHeader;
 	}
 	else if(e_pkgLen > (_PKG_MAX_LENGTH-1000))      //报文长度大于指定长度
 	{
-		c->curStat  = _PKG_HD_INIT;
-		c->precvbuf = c->dataHeadInfo;
-		c->irecvlen = m_iLenPkgHeader;
+		pConn->curStat  = _PKG_HD_INIT;
+		pConn->precvbuf = pConn->dataHeadInfo;
+		pConn->irecvlen = m_iLenPkgHeader;
 	}
 	else
 	{
 		//合法包头
 		char *pTmpBuffer  = (char *)pMemory->AllocMemory(m_iLenMsgHeader + e_pkgLen,false);  //消息头+消息体
-		c->ifnewrecvMem   = true;
-		c->pnewMemPointer = pTmpBuffer;
+		//c->ifnewrecvMem   = true;
+		pConn->precvMemPointer = pTmpBuffer;
 		
 		//先填写消息头
 		LPSTRUC_MSG_HEADER ptmpMsgHeader = (LPSTRUC_MSG_HEADER)pTmpBuffer;
-		ptmpMsgHeader->pConn = c;
-		ptmpMsgHeader->iCurrsequence = c->iCurrsequence;                                     //收到包时的连接池中连接序号记录到消息头里来，以备将来用；
+		ptmpMsgHeader->pConn = pConn;
+		ptmpMsgHeader->iCurrsequence = pConn->iCurrsequence;                                     //收到包时的连接池中连接序号记录到消息头里来，以备将来用；
 		
 		//再填写包头内容
 		pTmpBuffer += m_iLenMsgHeader;
 		memcpy(pTmpBuffer,pPkgHeader,m_iLenPkgHeader);
 		if(e_pkgLen == m_iLenPkgHeader)
 		{
-			ngx_wait_request_handler_proc_plast(c);
+			ngx_wait_request_handler_proc_plast(pConn);
 		}
 		else
 		{
-			c->curStat  = _PKG_BD_INIT;
-			c->precvbuf = pTmpBuffer + m_iLenPkgHeader;
-			c->irecvlen = e_pkgLen - m_iLenPkgHeader;
+			pConn->curStat  = _PKG_BD_INIT;
+			pConn->precvbuf = pTmpBuffer + m_iLenPkgHeader;
+			pConn->irecvlen = e_pkgLen - m_iLenPkgHeader;
 		}	
 	}
 	return;
 }
 
 //包处理阶段二 ，完整包之后的处理
-void CSocket::ngx_wait_request_handler_proc_plast(lpngx_connection_t c)
+void CSocket::ngx_wait_request_handler_proc_plast(lpngx_connection_t pConn)
 {
 	//将消息放入接收消息处理队列
 	//int irmqc = 0;
-	//inMsgRecvQueue(c->pnewMemPointer,irmqc);
+	//inMsgRecvQueue(c->precvMemPointer,irmqc);
 	//g_threadpool.Call(irmqc);
 	
-	g_threadpool.inMsgRecvQueueAndSignal(c->pnewMemPointer);
+	g_threadpool.inMsgRecvQueueAndSignal(pConn->precvMemPointer);
 	
 	//参数处理
-	c->ifnewrecvMem   = false;
-	c->pnewMemPointer = NULL;
-	c->curStat        = _PKG_HD_INIT;    //还原收包状态，收下一个包
-	c->precvbuf       = c->dataHeadInfo;  //设置收包位置
-	c->irecvlen       = m_iLenPkgHeader; //设置收包大小
+	//pConn->ifnewrecvMem   = false;
+	pConn->precvMemPointer = NULL;
+	pConn->curStat        = _PKG_HD_INIT;    //还原收包状态，收下一个包
+	pConn->precvbuf       = pConn->dataHeadInfo;  //设置收包位置
+	pConn->irecvlen       = m_iLenPkgHeader; //设置收包大小
 	return;
 }
 
+//发送数据专用函数，返回本次发送的字节数
+//返回 > 0，成功发送了一些字节
+//=0，估计对方断了
+//-1，errno == EAGAIN ，本方发送缓冲区满了
+//-2，errno != EAGAIN != EWOULDBLOCK != EINTR ，一般我认为都是对端断开的错误
+ssize_t CSocket::sendproc(lpngx_connection_t c,char *buff,ssize_t size)
+{
+	ssize_t n;
+	for(;;)
+	{
+		n = send(c->fd, buff, size, 0);
+		if(n > 0)
+		{
+			return n;
+		}
+		
+		if(n == 0)         //连接超时断开导致，放入recv中处理该情况
+		{
+			return 0;
+		}
+		
+		if(errno == EAGAIN) //内核缓冲区满了
+		{
+			return -1;
+		}
+		
+		if(errno == EINTR)
+		{
+			ngx_log_stderr(errno,"CSocekt::sendproc()中send()失败."); 
+		}
+		else                //同样放入recv模快处理
+		{
+			return -2;
+		}
+	}
+}
 //消息入队列
 /*void CSocket::inMsgRecvQueue(char *buf,int irmqc)
 {

@@ -1,6 +1,10 @@
 #ifndef __NGX_LOGICCOMM_H__
 #define __NGX_LOGICCOMM_H__ 
 
+#define _CMD_START	                    0  
+#define _CMD_REGISTER 		            _CMD_START + 5   //×¢²á
+#define _CMD_LOGIN 		                _CMD_START + 6   //µÇÂ¼
+
 #pragma pack (1)
 
 //×¢²á½á¹¹

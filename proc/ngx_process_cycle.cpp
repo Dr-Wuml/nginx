@@ -122,6 +122,7 @@ static int ngx_spawn_process(int inum,const char *pprocname)
 
 static void ngx_worker_process_cycle(int inum,const char *pprocname)
 {
+	ngx_process = NGX_PROCESS_WORKER;
     ngx_worker_process_init(inum);
     ngx_setproctitle(pprocname);
     ngx_log_error_core(NGX_LOG_NOTICE,0,"%s %P 启动并开始运行......!",pprocname,ngx_pid); //设置标题时顺便记录下来进程名，进程id等信息到日志
@@ -143,12 +144,15 @@ static void ngx_worker_process_cycle(int inum,const char *pprocname)
             //printf("我的测试哈inum=%d",inum++);
             //fflush(stdout);
         //}
-        ngx_process_events_and_timers(); //处理网络事件和定时器事件  
-        //ngx_log_stderr(0,"good--这是子进程，pid为%P",ngx_pid); 
-        //ngx_log_error_core(0,0,"good--这是子进程，编号为%d,pid为%P",inum,ngx_pid);
+        ngx_process_events_and_timers(); //处理网络事件和定时器事件 
+        /*if(false) //优雅的退出
+        {
+            g_stopEvent = 1;
+            break;
+        }*/ 
     }
-    //如果从这个循环跳出来，考虑在这里停止线程池；
-    g_threadpool.StopAll();
+    g_threadpool.StopAll();          //如果从这个循环跳出来，考虑在这里停止线程池；
+    g_socket.Shutdown_subproc();     //释放子进程中的套接字
     return ;
 }
 
@@ -169,7 +173,12 @@ static void ngx_worker_process_init(int inum)
         //内存没释放，但是简单粗暴退出；
         exit(-2);
     }
-    sleep(5);
+    sleep(1);
+    
+    if(g_socket.Initialize_subproc() == false)       //初始化子进程需要的一些多线程能力相关的信息
+    {
+    	exit(-1);
+    }
     g_socket.ngx_epoll_init(); 
     return ;
 }

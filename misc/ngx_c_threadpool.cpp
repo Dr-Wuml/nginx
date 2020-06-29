@@ -17,9 +17,10 @@ bool            CThreadPool::m_shutdown     = false;
 //构造函数
 CThreadPool::CThreadPool()
 {
-	m_iRunningThreadNum = 0;                //正在运行的线程数量为0
-	m_iLastEmgTime      = 0;                //上次报告线程不够用的时间
+	m_iRunningThreadNum  = 0;                //正在运行的线程数量为0
+	m_iLastEmgTime       = 0;                //上次报告线程不够用的时间
 	//m_iPrintInfoTime    = 0;                //上次打印参考信息的时间
+	m_iRecvMsgQueueCount = 0;                //收消息队列
 } 
 
 CThreadPool::~CThreadPool()
@@ -58,7 +59,7 @@ bool CThreadPool::Create(int threadNum)
 			ngx_log_stderr(err,"CThreadPool::Create()创建线程%d失败，返回的错误码为%d!",i,err);
 			return false;
 		}
-		ngx_log_stderr(0,"CThreadPool::Create()创建线程%d成功,线程id=%d",pNew->_Handle);
+		//ngx_log_stderr(0,"CThreadPool::Create()创建线程%d成功,线程id=%d",pNew->_Handle);
 	}
 	std::vector<ThreadItem*>::iterator iter;
 lblfor:
@@ -134,7 +135,7 @@ void *CThreadPool::ThreadFunc(void *threadData)
         }
         char    *jobbuf  = pThreadPoolObj->m_MsgRecvQueue.front();
         pThreadPoolObj->m_MsgRecvQueue.pop_front();
-        --pThreadPoolObj->m_iRecvMsgQueueCount;
+        --pThreadPoolObj->m_iRecvMsgQueueCount;                         //收消息队列数字-1
         
         err = pthread_mutex_unlock(&m_pthreadMutex); 
         if(err != 0)

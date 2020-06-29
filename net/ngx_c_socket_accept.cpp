@@ -80,7 +80,7 @@ void CSocket::ngx_event_accept(lpngx_connection_t oldc)
 			if (err == EMFILE || err == ENFILE) 
             {
                 //do nothing，这个官方做法是先把读事件从listen socket上移除，然后再弄个定时器，定时器到了则继续执行该函数，但是定时器到了有个标记，会把读事件增加到listen socket上去；
-                //我这里目前先不处理吧【因为上边已经写这个日志了】；
+                //目前先不处理吧【因为上边已经写这个日志了】；
             } 
             return;
 		}//end if(s == -1)
@@ -110,10 +110,15 @@ void CSocket::ngx_event_accept(lpngx_connection_t oldc)
 			}
 		}
 		newc->listening = oldc->listening;                     //连接对象 和监听对象关联，方便通过连接对象找监听对象【关联到监听端口】
-		newc->w_ready = 1;                                     //标记可以写，新连接写事件肯定是ready
+		//newc->w_ready = 1;                                     //标记可以写，新连接写事件肯定是ready
 		newc->rhandler = &CSocket::ngx_wait_request_handler;   //设置数据来时的读处理函数，
 		 //客户端主动发送第一次的数据，将读事件加入epoll监控
-		if(ngx_epoll_add_event(s,1,0,0,EPOLL_CTL_ADD,newc) == -1)//其他补充标记【EPOLLET(高速模式，边缘触发ET)】
+		/*if(ngx_epoll_add_event(s,1,0,0,EPOLL_CTL_ADD,newc) == -1)//其他补充标记【EPOLLET(高速模式，边缘触发ET)】
+		{
+			ngx_close_connection(newc);
+			return;
+		}*/
+		if(ngx_epoll_oper_event(s,EPOLL_CTL_ADD,EPOLLIN|EPOLLRDHUP,0,newc) == -1)
 		{
 			ngx_close_connection(newc);
 			return;

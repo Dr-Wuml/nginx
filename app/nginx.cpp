@@ -11,7 +11,8 @@
 #include "ngx_c_socket.h"
 #include "ngx_c_memory.h"
 #include "ngx_c_threadpool.h"
-#include "ngx_c_slogic.h"
+#include "ngx_c_crc32.h"       //和crc32校验算法有关 
+#include "ngx_c_slogic.h"      //和socket通讯相关
 
 static void freeresource(); //回收资源
 
@@ -33,19 +34,22 @@ CThreadPool  g_threadpool;      //线程池全局对象
 pid_t ngx_pid;               //当前进程的pid
 pid_t ngx_parent;            //父进程的pid
 int   ngx_process;           //进程类型，比如master,worker进程等
+int   g_stopEvent;           //程序退出标志
 
 sig_atomic_t  ngx_reap;      //标记子进程状态变化
 int main(int argc,char *const *argv)
 {
     int exitcode = 0;   //退出代码，0表示正常
     int i;
-    CMemory *p_memory;
+    
+    //(0)先初始化的变量
+    g_stopEvent = 0;            //标记程序是否退出，0不退出 
     
     ngx_pid = getpid();//取得进程pid
     ngx_parent = getppid();//父进程pid;
     
     g_argvneedmem = 0;
-    for(i=0 ;i<argc;i++)
+    for(i=0 ;i<argc; i++)
     {
         g_argvneedmem += strlen(argv[i]) + 1;
     }
@@ -73,6 +77,7 @@ int main(int argc,char *const *argv)
     }
     
     CMemory::GetInstance();
+    CCRC32::GetInstance();
 
     ngx_log_init(); //初始化日志文件
     

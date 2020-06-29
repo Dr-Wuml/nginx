@@ -18,63 +18,216 @@
 #include "ngx_func.h"
 #include "ngx_c_socket.h"
 #include "ngx_c_memory.h"
+#include "ngx_c_lockmutex.h"
+
+ngx_connection_s::ngx_connection_s()         //构造函数
+{
+	iCurrsequence = 0;
+	pthread_mutex_init(&logicPorcMutex,NULL);//互斥量初始化
+}
+ngx_connection_s::~ngx_connection_s()        //析构函数
+{
+	pthread_mutex_destroy(&logicPorcMutex) ;  //互斥量释放
+}
+
+//连接分配初始化
+void ngx_connection_s::GetOneToUse()
+{
+	++iCurrsequence;
+	
+	curStat  = _PKG_HD_INIT;                  //收包初始状态
+	precvbuf = dataHeadInfo;                 //包信息存放位置
+	irecvlen = sizeof(COMM_PKG_HEADER);      //指定接收数据长度
+	
+	precvMemPointer = NULL;                  //暂未分配内存
+	iThrowsendCount = 0;                     //原子的
+	psendMemPointer = NULL;                  //发送数据头指针记录
+	events          = 0;                     //开始无事件
+}
+
+//回收的连接用来清理一些参数
+void ngx_connection_s::PutOneToFree()
+{
+	++iCurrsequence;
+	if(precvMemPointer != NULL)              //接收缓冲区
+	{
+		CMemory::GetInstance()->FreeMemory(precvMemPointer);
+		precvMemPointer = NULL;
+	}
+	if(psendMemPointer != NULL)              //发送缓冲区
+	{
+		CMemory::GetInstance()->FreeMemory(psendMemPointer);
+		psendMemPointer = NULL;
+	}
+	iThrowsendCount = 0;
+}
+
+void CSocket::initconnection()
+{
+	lpngx_connection_t pConn;
+	CMemory *pMemory = CMemory::GetInstance();
+	
+	int ilenconnpool = sizeof(ngx_connection_t);
+	for(int i = 0;i < m_worker_connections; i++)                                 //初始化建立m_worker_connections个连接
+	{
+		pConn = (lpngx_connection_t)pMemory->AllocMemory(ilenconnpool,true);
+		pConn = new(pConn) ngx_connection_t();
+		pConn->GetOneToUse();
+		m_connectionList.push_back(pConn);                                       //全部连接  占用+空闲
+		m_freeconnectionList.push_back(pConn);                                   //空闲连接
+	}
+	m_free_connection_n = m_total_connection_n = m_connectionList.size();        //初始阶段两个列表一样大
+}
+
+//最终回收连接池，释放内存
+void CSocket::clearconnection()
+{
+	lpngx_connection_t pConn;
+	CMemory *pMemory = CMemory::GetInstance();
+	while(!m_connectionList.empty())
+	{
+		pConn = m_connectionList.front();
+		m_connectionList.pop_front();
+		pConn->~ngx_connection_s();
+		pMemory->FreeMemory(pConn);
+	}
+}
 
 //获取一个空闲连接取用
 lpngx_connection_t CSocket::ngx_get_connection(int isock)
 {
-    //ngx_log_stderr(errno,"CSocket::ngx_get_connection isock = %d.",isock);
-	lpngx_connection_t c = m_pfree_connections;           //空闲连接表头
-	if(c == NULL)
+	CLock lock(&m_connectionMutex);
+
+	if(!m_freeconnectionList.empty())
 	{
-		ngx_log_stderr(errno,"CSocket::ngx_get_connection()中空闲链表为空，请检查！");
-		return NULL;
+		lpngx_connection_t pConn = m_freeconnectionList.front();                       //返回第一个空闲连接
+		m_freeconnectionList.pop_front();
+		pConn->GetOneToUse();
+		--m_free_connection_n;
+		pConn->fd = isock;
+		return pConn;
 	}
-    //ngx_log_stderr(errno,"CSocket::ngx_get_connection c = %p.",c);
-	m_pfree_connections = c->data;
-	m_free_connection_n--;
-	uintptr_t instance = c->instance;
-	uint64_t  iCurrsequence = c->iCurrsequence;
-	memset(c, 0, sizeof(ngx_connection_t));
-	c->fd = isock;
-	c->curStat = _PKG_HD_INIT;                           //收包状态处于 初始状态，准备接收数据包头【状态机】
-	
-	c->precvbuf = c->dataHeadInfo;                       //收包先收到这里，因为先收包头，所以收数据的buff是dataHeadInfo
-	c->irecvlen = sizeof(COMM_PKG_HEADER);               //指定收数据的长度，先要求收包头这么长字节的数据
-	
-	c->ifnewrecvMem = false;                             //标记没有new内存，所以不用释放	
-	c->pnewMemPointer = NULL;                            //无new，内存为空
-	
-	c->instance = !instance;
-	c->iCurrsequence = iCurrsequence;
-	++c->iCurrsequence;
-	//wev->write = 1;
-	return c;
+    
+    //没有连接，创建一个连接
+    CMemory *pMemory = CMemory::GetInstance();
+    lpngx_connection_t pConn = (lpngx_connection_t)pMemory->AllocMemory(sizeof(ngx_connection_t),true);
+    pConn = new(pConn)ngx_connection_t();
+    pConn->GetOneToUse();
+    m_connectionList.push_back(pConn);
+    ++m_total_connection_n;
+    pConn->fd = isock;
+    return pConn;
 }
 
-void CSocket::ngx_free_connection(lpngx_connection_t c)
+//立即回收
+void CSocket::ngx_free_connection(lpngx_connection_t pConn)
 {
-	if(c->ifnewrecvMem == true)
-	{
-		//此链接分配过内存，释放该块内存
-		CMemory::GetInstance()->FreeMemory(c->pnewMemPointer);
-		c->pnewMemPointer = NULL;
-		c->ifnewrecvMem = false;
-	}
+	CLock lock(&m_connectionMutex);
 	
-	c->data = m_pfree_connections;
-	++c->iCurrsequence;                                   //回收后，该值就加1,用于判断某些网络事件是否过期
-	m_pfree_connections = c;
+	pConn->PutOneToFree();
+	m_freeconnectionList.push_back(pConn); // 加入到空闲连接
 	++m_free_connection_n;
 	return;
 }
 
-void CSocket::ngx_close_connection(lpngx_connection_t c)
+//待回收连接入队列
+void CSocket::inRecyConnectQueue(lpngx_connection_t pConn)
 {
-	if(close(c->fd) == -1)
+	ngx_log_stderr(0,"CSocket::inRecyConnectQueue()中执行，连接放入待释放列表.");
+	CLock lock(&m_recyconnqueueMutex);              //连接回收列表的互斥量，线程ServerRecyConnectionThread()也要用到这个回收列表
+	pConn->inRecyTime = time(NULL);                 //记录回收时间
+	++pConn->iCurrsequence;
+	m_recyconnectionList.push_back(pConn);          //放入待回收容器，等待ServerRecyConnectionThread线程处理
+	++m_total_recyconnection_n;                     //待释放队列大小+1
+	return;
+}
+
+
+//连接延时回收线程
+void* CSocket::ServerRecyConnectionThread(void *threadData)
+{
+	ThreadItem *pThread = static_cast<ThreadItem*>(threadData);
+	CSocket *pSocketObj = pThread->_pThis;
+	
+	time_t currtime;
+	int err;
+	std::list<lpngx_connection_t>::iterator pos,posend;
+    lpngx_connection_t pConn;
+    
+    while(1)
+    {
+    	usleep(200 *1000);
+    	if(pSocketObj->m_total_recyconnection_n > 0)
+    	{
+    		currtime = time(NULL);
+    		err = pthread_mutex_lock(&pSocketObj->m_recyconnqueueMutex);
+    		if(err != 0)
+    		{
+    			ngx_log_stderr(err,"CSocekt::ServerRecyConnectionThread()中pthread_mutex_lock()失败，返回的错误码为%d!",err);
+    		}
+lblRRTD:
+	        pos    = pSocketObj->m_recyconnectionList.begin();
+	        posend = pSocketObj->m_recyconnectionList.end();
+	        for(; pos != posend; ++pos)
+	        {
+	        	pConn = (*pos);
+	        	if( ((pConn->inRecyTime + pSocketObj->m_RecyConnectionWaitTime) > currtime) && (g_stopEvent == 0) )
+	        	{
+	        		continue;
+	        	}
+	        	
+	        	//预留
+	        	--pSocketObj->m_total_recyconnection_n;                             //待释放队列减一
+	        	pSocketObj->m_recyconnectionList.erase(pos);                        //删除该节点
+	        	pSocketObj->ngx_free_connection(pConn);                             //归还该链接
+	        	goto lblRRTD;
+	        }//end for
+	        err = pthread_mutex_unlock(&pSocketObj->m_recyconnqueueMutex);
+	        if(err != 0)
+	        {
+	        	ngx_log_stderr(err,"CSocekt::ServerRecyConnectionThread()pthread_mutex_unlock()失败，返回的错误码为%d!",err);
+	        }  
+    	}//end if
+    	if(g_stopEvent == 1)                                                        //退出整个程序
+    	{
+    		if(pSocketObj->m_total_recyconnection_n > 0)
+    		{
+    			err = pthread_mutex_lock(&pSocketObj->m_recyconnqueueMutex);
+    			if(err != 0)
+    			{
+    				ngx_log_stderr(err,"CSocekt::ServerRecyConnectionThread()中pthread_mutex_lock2()失败，返回的错误码为%d!",err);
+    			}
+    		lblRRTD2:
+    			pos    = pSocketObj->m_recyconnectionList.begin();
+	            posend = pSocketObj->m_recyconnectionList.end();
+	            for(; pos != posend; pos++)
+	            {
+	            	pConn = (*pos);
+	            	--pSocketObj->m_total_recyconnection_n;                             //待释放队列减一
+	        	    pSocketObj->m_recyconnectionList.erase(pos);                        //删除该节点
+	        	    pSocketObj->ngx_free_connection(pConn);                             //归还该链接
+	        	    goto lblRRTD2;
+	            }//end for
+	            err = pthread_mutex_unlock(&pSocketObj->m_recyconnqueueMutex);
+	            if(err != 0)
+    			{
+    				ngx_log_stderr(err,"CSocekt::ServerRecyConnectionThread()中pthread_mutex_lock2()失败，返回的错误码为%d!",err);
+    			}
+    		}//end if
+    		break;
+    	}//end if
+    }//end while
+    return (void*)0;
+}
+
+//把ngx_close_accepted_connection()函数改名，并从文件ngx_socket_accept.cxx迁移到本文件中，并改造其中代码
+void CSocket::ngx_close_connection(lpngx_connection_t pConn)
+{
+	ngx_free_connection(pConn);
+	if(close(pConn->fd) == -1)
 	{
-		ngx_log_error_core(NGX_LOG_ALERT,errno,"CSocket::ngx_close_connection()中close(%d)失败！",c->fd);
+		ngx_log_error_core(NGX_LOG_ALERT,errno,"CSocket::ngx_close_connection()中close(%d)失败！",pConn->fd);
 	}
-	c->fd -1 ;
-	ngx_free_connection(c);
+	pConn->fd = -1 ;
 	return;
 }
