@@ -1,2 +1,0 @@
-2020/06/29 17:48:57 [stderr] 15061: nginx: CSocket::Initialize()中bind()失败，i=0.
-2020/06/29 17:48:57 [stderr] 15061: nginx: 程序退出，再见！
