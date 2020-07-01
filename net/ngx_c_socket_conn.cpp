@@ -176,6 +176,12 @@ lblRRTD:
 	        		continue;
 	        	}
 	        	
+	        	if(pConn->iThrowsendCount != 0)
+                {
+                    //这确实不应该，打印个日志吧；
+                    ngx_log_stderr(0,"CSocekt::ServerRecyConnectionThread()中到释放时间却发现p_Conn.iThrowsendCount!=0，这个不该发生");
+                    //其他先暂时啥也不敢，路程继续往下走，继续去释放吧。
+                }
 	        	//预留
 	        	--pSocketObj->m_total_recyconnection_n;                             //待释放队列减一
 	        	pSocketObj->m_recyconnectionList.erase(pos);                        //删除该节点

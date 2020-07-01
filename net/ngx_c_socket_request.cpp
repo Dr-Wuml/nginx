@@ -21,7 +21,7 @@
 #include "ngx_c_memory.h"
 #include "ngx_c_lockmutex.h"  //自动释放互斥量的一个类
 //来数据时候的处理，当连接上有数据来的时候，本函数会被ngx_epoll_process_events()所调用  ,官方的类似函数为ngx_http_wait_request_handler();
-void CSocket::ngx_wait_request_handler(lpngx_connection_t pConn)
+void CSocket::ngx_read_request_handler(lpngx_connection_t pConn)
 {  
     ssize_t reco = recvproc(pConn,pConn->precvbuf,pConn->irecvlen);
     if(reco <= 0 )
@@ -81,6 +81,44 @@ void CSocket::ngx_wait_request_handler(lpngx_connection_t pConn)
     return;
 }
 
+//设置数据来时的写处理函数
+void CSocket::ngx_write_request_handler(lpngx_connection_t pConn)         
+{
+	CMemory *pMemory = CMemory::GetInstance();
+	
+	ssize_t sendsize = sendproc(pConn, pConn->psendbuf, pConn->isendlen);
+	if(sendsize >0 && sendsize != pConn->isendlen)                       //数据未发送完毕
+	{
+		pConn->psendbuf = pConn->psendbuf + sendsize;
+		pConn->isendlen = pConn->isendlen - sendsize;
+		return;
+	}
+	else if(sendsize == -1)
+	{
+		//这不太可能，可以发送数据时通知write发送数据，发送时系统却通知我发送缓冲区满？
+        ngx_log_stderr(errno,"CSocekt::ngx_write_request_handler()时if(sendsize == -1)成立，这很怪异。"); //打印个日志
+        return;
+	}
+	
+	if(sendsize > 0 && sendsize == pConn->isendlen)                                        //数据发送完毕，干掉红黑树中的写事件
+	{
+		if(ngx_epoll_oper_event(pConn->fd, EPOLL_CTL_MOD, EPOLLOUT, 1, pConn) == -1)
+		{
+			ngx_log_stderr(errno,"CSocekt::ngx_write_request_handler()中ngx_epoll_oper_event()失败。");
+		}
+		 ngx_log_stderr(0,"CSocekt::ngx_write_request_handler()中数据发送完毕，很好。");
+	}
+	
+	if(sem_post(&m_semEventSendQueue) == -1)
+	{
+		 ngx_log_stderr(0,"CSocekt::ngx_write_request_handler()中sem_post(&m_semEventSendQueue)失败.");
+	}
+	pMemory->FreeMemory(pConn->psendMemPointer);
+	pConn->psendMemPointer = NULL;
+	--pConn->iThrowsendCount;
+	
+	return ;
+}
 ssize_t CSocket::recvproc(lpngx_connection_t c,char *buff,ssize_t buflen)     //接收消息
 {
 	ssize_t n;

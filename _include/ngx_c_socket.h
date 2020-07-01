@@ -118,7 +118,8 @@ private:
 
     //业务处理函数
     void ngx_event_accept(lpngx_connection_t oldc);                   //建立新连接
-    void ngx_wait_request_handler(lpngx_connection_t pConn);          //设置数据来时的读处理函数
+    void ngx_read_request_handler(lpngx_connection_t pConn);          //设置数据来时的读处理函数
+    void ngx_write_request_handler(lpngx_connection_t pConn);         //设置数据来时的写处理函数
     void ngx_close_connection(lpngx_connection_t pConn);              //通用链接关闭函数，资源用这个函数释放
     
     ssize_t recvproc(lpngx_connection_t pConn,char *buff,ssize_t buflen);  //接收从客户端传来的数据专用
@@ -138,7 +139,7 @@ private:
     void inRecyConnectQueue(lpngx_connection_t pConn);            //回收连接入队列
     
     //线程相关函数
-    //static void* ServerSendQueueThread(void *threadData);         //专门用来发送数据的线程
+    static void* ServerSendQueueThread(void *threadData);         //专门用来发送数据的线程
 	static void* ServerRecyConnectionThread(void *threadData);    //专门用来回收连接的线程
 protected:
 	//和网络通讯相关的变量

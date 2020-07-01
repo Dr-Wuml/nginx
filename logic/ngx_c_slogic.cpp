@@ -157,10 +157,10 @@ bool CLogicSocket::_HandleRegister(lpngx_connection_t pConn,LPSTRUC_MSG_HEADER p
 	//计算包体CRC32值
 	pPkgHeader->crc32 = pCrc32->Get_CRC((unsigned char*)pSendInfo,iSendLen);
 	pPkgHeader->crc32 = htonl(pPkgHeader->crc32);
-	//f)发送数据包
-    //msgSend(p_sendbuf);
+	//发送数据包
+    msgSend(pSendBuf);
     //如果时机OK才add_event
-    if(ngx_epoll_oper_event(pConn->fd,                 //socket句柄
+    /*if(ngx_epoll_oper_event(pConn->fd,                 //socket句柄
                             EPOLL_CTL_MOD,
                             EPOLLOUT,              //读，写 ,这里读为1，表示客户端应该主动给我服务器发送消息，我服务器需要首先收到客户端的消息；
                             0,                                                      
