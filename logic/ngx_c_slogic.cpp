@@ -33,7 +33,7 @@ typedef bool (CLogicSocket::*handler)(lpngx_connection_t pConn,              //Á
 static const handler statusHandler[] = 
 {
 	//Ç°Îå¸öÔªËØ±£Áô£¬´ýÍØÕ¹
-	NULL,                                       //¡¾0¡¿
+	&CLogicSocket::_HandlePing,                 //¡¾0¡¿ÐÄÌø°ü¹¦ÄÜ
 	NULL,                                       //¡¾1¡¿
 	NULL,                                       //¡¾2¡¿
 	NULL,                                       //¡¾3¡¿
@@ -121,7 +121,69 @@ void CLogicSocket::threadRecvProcFunc(char *pMsgBuf)
     (this->*statusHandler[imsgCode])(pConn,pMsgHeader,(char *)pPkgBody,pkglen-m_iLenPkgHeader);
     return;	
 }
+
+
 //´¦Àí¸÷ÖÖÒµÎñÂß¼­
+
+//ÐÄÌø°ü³¬Ê±¼ì²âº¯Êý
+void CLogicSocket::procPingTimeOutChecking(LPSTRUC_MSG_HEADER tmpmsg,time_t cur_time)
+{
+	CMemory *pMemory = CMemory::GetInstance();
+	
+	if(tmpmsg->iCurrsequence == tmpmsg->pConn->iCurrsequence)                       //Á¬½Ó´æÔÚ
+	{
+		lpngx_connection_t pConn = tmpmsg->pConn;
+		if(m_ifTimeOutKick == 1)
+		{
+			zdClosesocketProc(pConn);
+		}
+		else if((cur_time - pConn->lastPingTime) > m_iWaitTime*3 + 10)
+		{
+			//ngx_log_stderr(0,"Ê±¼äµ½²»·¢ÐÄÌø°ü£¬Ìß³öÈ¥!");   //¸Ð¾õOK
+			zdClosesocketProc(pConn); 
+		}
+		pMemory->FreeMemory(tmpmsg);
+	}
+	else
+	{
+		pMemory->FreeMemory(tmpmsg);
+	}
+}
+
+//Ö»·¢ËÍ°üÍ·µÄº¯Êý
+void CLogicSocket::SendNoBodyPkgToClient(LPSTRUC_MSG_HEADER pMsgHeader,unsigned short iMsgCode)
+{
+	CMemory *pMemory = CMemory::GetInstance();
+	
+	char *pSendBuf = (char *) pMemory->AllocMemory(m_iLenMsgHeader+m_iLenPkgHeader, false);
+	char *pTmpBuf  = pSendBuf;
+	memcpy(pTmpBuf,pMsgHeader,m_iLenMsgHeader);
+	pTmpBuf += m_iLenMsgHeader;
+	
+	LPCOMM_PKG_HEADER pPkgHeader = (LPCOMM_PKG_HEADER) pTmpBuf;  //ÄÃµ½Òª·¢ËÍµÄ°üÍ·
+	pPkgHeader->msgCode = htons(iMsgCode);
+	pPkgHeader->pkgLen  = htons(m_iLenPkgHeader);
+	pPkgHeader->crc32   = 0;
+	msgSend(pSendBuf);
+	return;
+}
+
+//ÐÄÌø°üÊµÏÖ
+bool CLogicSocket::_HandlePing(lpngx_connection_t pConn,LPSTRUC_MSG_HEADER pMsgHeader,char *pPkgBody,unsigned short iBodyLength)
+{
+	if(iBodyLength != 0)            //ÐÄÌø°üÉè¼ÆÖ»ÓÐ°üÍ·£¬ÎÞ°üÌå£¬ËùÒÔÓÐ°üÌåÈÏÎªÊÇ·Ç·¨°ü
+	{
+		return false;
+	}
+	
+	CLock(&pConn->logicPorcMutex);
+	pConn->lastPingTime = time(NULL);
+	SendNoBodyPkgToClient(pMsgHeader,_CMD_PING);
+	ngx_log_stderr(0,"this is pkg is heartbeat.");
+	return true;
+}
+
+//×¢²á°ü
 bool CLogicSocket::_HandleRegister(lpngx_connection_t pConn,LPSTRUC_MSG_HEADER pMsgHeader,char *pPkgBody,unsigned short iBodyLength)
 {
 	if(pPkgBody == NULL)
@@ -138,6 +200,9 @@ bool CLogicSocket::_HandleRegister(lpngx_connection_t pConn,LPSTRUC_MSG_HEADER p
 	CLock lock(&pConn->logicPorcMutex);
 	
 	LPSTRUCT_REGISTER pRecvInfo = (LPSTRUCT_REGISTER)pPkgBody;    //È¡µÃ°üÌåÊý¾Ý
+	pRecvInfo->iType    = ntohl(pRecvInfo->iType);
+	pRecvInfo->username[sizeof(pRecvInfo->username) - 1] = 0;
+	pRecvInfo->password[sizeof(pRecvInfo->password) - 1] = 0;
 	
     //»ØÏûÏ¢°üÓ¦ÓÃ
 	LPCOMM_PKG_HEADER pPkgHeader;
@@ -187,6 +252,8 @@ bool CLogicSocket::_HandleRegister(lpngx_connection_t pConn,LPSTRUC_MSG_HEADER p
     ngx_log_stderr(0,"Ö´ÐÐÁËCLogicSocket::_HandleRegister()!");
     return true;
 }
+
+//µÇÂ¼°ü
 bool CLogicSocket::_HandleLogin(lpngx_connection_t pConn,LPSTRUC_MSG_HEADER pMsgHeader,char *pPkgBody,unsigned short iBodyLength)
 {
     ngx_log_stderr(0,"Ö´ÐÐÁËCLogicSocket::_HandleLogIn()!");

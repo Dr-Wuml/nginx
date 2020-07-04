@@ -8,6 +8,7 @@
 #include <pthread.h>    //多线程
 #include <semaphore.h>  //信号量 
 #include <atomic>       //c++11里的原子操作
+#include <map>          //multimap
 
 #include "ngx_comm.h"
 
@@ -75,6 +76,13 @@ struct ngx_connection_s
     //入到资源回收站的时间
     time_t                    inRecyTime;
     
+    //心跳包相关
+    time_t                    lastPingTime;                   //上一次心跳包发送的时间
+    
+    //和网络相关
+    uint64_t                  FloodkickLastTime;              //Flood攻击上次收到包的时间
+    int                       FloodAttackCount;               //Flood攻击在该时间内收到包的次数统计
+    
     lpngx_connection_t        next;            //指针，指向下一个本类型的对象,空闲连接池的位置
 };
 
@@ -99,6 +107,7 @@ public:
     
 public:
 	virtual void threadRecvProcFunc(char *pMsgBuf);                    //处理客户端请求，虚函数，因为将来可以考虑自己来写子类继承本类
+	virtual void procPingTimeOutChecking(LPSTRUC_MSG_HEADER tmpmsg,time_t cur_time); //心跳包检测时间到，该去检测心跳包是否超时的事宜
 public:
     int ngx_epoll_init();                                        //epoll功能初始化
     //epoll增加事件
@@ -109,6 +118,7 @@ public:
     int ngx_epoll_oper_event(int fd,uint32_t eventtype,uint32_t flag,int bcaction,lpngx_connection_t pConn);
 protected:
 	void msgSend(char *psendbuf);                                //发送消息送入待发送队列
+	void zdClosesocketProc(lpngx_connection_t pConn);            //主动关闭连接处理函数
 private:
     void ReadConf();                                             //配置项读取
     bool ngx_open_listening_sockets();                           //监听必须得端口[支持多端口]
@@ -123,8 +133,8 @@ private:
     void ngx_close_connection(lpngx_connection_t pConn);              //通用链接关闭函数，资源用这个函数释放
     
     ssize_t recvproc(lpngx_connection_t pConn,char *buff,ssize_t buflen);  //接收从客户端传来的数据专用
-    void ngx_wait_request_handler_proc_p1(lpngx_connection_t pConn);       //包头接收完整后的处理
-    void ngx_wait_request_handler_proc_plast(lpngx_connection_t pConn);    //收到一个完成包后的处理
+    void ngx_wait_request_handler_proc_p1(lpngx_connection_t pConn,bool &isflood);       //包头接收完整后的处理
+    void ngx_wait_request_handler_proc_plast(lpngx_connection_t pConn,bool &isflood);    //收到一个完成包后的处理
     void clearMsgSendQueue();                                              //清理发送消息队列  
     
     ssize_t sendproc(lpngx_connection_t c,char *buff,ssize_t size);        //将数据发送到客户端
@@ -137,14 +147,27 @@ private:
     lpngx_connection_t ngx_get_connection(int isock);             //从连接池中获取一个空闲连接
     void ngx_free_connection(lpngx_connection_t pConn);           //归还参数c所代表的连接到连接池中
     void inRecyConnectQueue(lpngx_connection_t pConn);            //回收连接入队列
+    //时间相关
+    void AddToTimerQueue(lpngx_connection_t pConn);               //设置剔除时钟
+    time_t GetEarliestTime();                                     //从时间列表中，获取最早的时间返回
+    LPSTRUC_MSG_HEADER RemoveFirstTimer();                        //从时钟队列中移除最早的时间
+    LPSTRUC_MSG_HEADER GetOverTimeTimer(time_t cur_time);                        //获取超时节点
+    void DeleteFromTimerQueue(lpngx_connection_t pConn);          //从timer表中删除指定的TCP连接
+    void clearAllFromTimerQueue();                                //清理时间队列中所有的内容
     
+    //网络安全相关
+    bool TestFlood(lpngx_connection_t pConn);                     //flood攻击防范函数
     //线程相关函数
     static void* ServerSendQueueThread(void *threadData);         //专门用来发送数据的线程
 	static void* ServerRecyConnectionThread(void *threadData);    //专门用来回收连接的线程
+	static void* ServerTimerQueueMonitorThread(void *threadData); //时间队列监视线程，处理到期不发心跳包的用户释放的线程
 protected:
 	//和网络通讯相关的变量
     size_t                         m_iLenPkgHeader;              //sizeof(COMM_PKG_HEADER);
     size_t                         m_iLenMsgHeader;              //sizeof(STRUC_MSG_HEADER);
+    
+    int                            m_iWaitTime;                  //检测心跳包的间隔时间
+    int                            m_ifTimeOutKick;                //当时间到达Sock_MaxWaitTime指定的时间时，直接把客户端踢出
 private:
 	
 	struct ThreadItem
@@ -187,6 +210,19 @@ private:
     std::vector<ThreadItem *>      m_threadVector;              //线程容器
     pthread_mutex_t                m_sendMessageQueueMutex;      //发消息队列互斥量
     sem_t                          m_semEventSendQueue;          //处理消息线程的信号量
+    
+    //时间相关
+    int                            m_ifkickTimeCount;            //是否开启时钟：1开启，0不开启
+    pthread_mutex_t                m_timequeueMutex;             //和时间队列相关的互斥量
+    std::multimap<time_t,LPSTRUC_MSG_HEADER> m_timerQueuemap;   //时间队列
+    size_t                         m_cur_size_;                  //时间队列大小    	
+    time_t                         m_timer_value_;               //当前计时队列头部时间值
+    std::atomic<int>               m_onlineUserCount;            //用户连入数量
+    	
+    //网络安全相关
+    int                            m_floodAkEnable;              //Flood检测是否开启
+    unsigned int                   m_floodTimeInterval;          //每次收到数据包的时间间隔
+    int                            m_floodKickCount;             //累计次数阀值
 
 };
 #endif //!__NGX_C_SOCKET_H__

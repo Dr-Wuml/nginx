@@ -85,6 +85,13 @@ void CSocket::ngx_event_accept(lpngx_connection_t oldc)
             return;
 		}//end if(s == -1)
 		
+		
+		if(m_onlineUserCount >= m_worker_connections)
+		{
+			ngx_log_stderr(0,"超出系统允许的最大连入用户数(最大允许连入数%d)，关闭连入请求(%d)。",m_worker_connections,s);
+			close(s);
+			return;
+		}
 		//accept4成功
 		newc = ngx_get_connection(s);
 		if(newc == NULL)
@@ -124,6 +131,12 @@ void CSocket::ngx_event_accept(lpngx_connection_t oldc)
 			ngx_close_connection(newc);
 			return;
 		}
+		
+		if(m_ifkickTimeCount == 1)
+		{
+			AddToTimerQueue(newc);
+		}
+		++m_onlineUserCount;
 		break;		
 	}while(1);                  
 	return;

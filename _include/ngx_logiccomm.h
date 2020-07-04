@@ -2,6 +2,7 @@
 #define __NGX_LOGICCOMM_H__ 
 
 #define _CMD_START	                    0  
+#define _CMD_PING                       _CMD_START + 0   //ÐÄÌø°ü
 #define _CMD_REGISTER 		            _CMD_START + 5   //×¢²á
 #define _CMD_LOGIN 		                _CMD_START + 6   //µÇÂ¼
 

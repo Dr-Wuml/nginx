@@ -43,6 +43,10 @@ void ngx_connection_s::GetOneToUse()
 	iThrowsendCount = 0;                     //原子的
 	psendMemPointer = NULL;                  //发送数据头指针记录
 	events          = 0;                     //开始无事件
+	lastPingTime    = time(NULL);            //上次Ping的时间
+	
+	FloodkickLastTime = 0;                   //Flood攻击上次收到包的时间
+	FloodAttackCount  = 0;                   //Flood在该时间内收到包的次数统计
 }
 
 //回收的连接用来清理一些参数
@@ -133,12 +137,30 @@ void CSocket::ngx_free_connection(lpngx_connection_t pConn)
 //待回收连接入队列
 void CSocket::inRecyConnectQueue(lpngx_connection_t pConn)
 {
-	ngx_log_stderr(0,"CSocket::inRecyConnectQueue()中执行，连接放入待释放列表.");
+	//ngx_log_stderr(0,"CSocket::inRecyConnectQueue()中执行，连接放入待释放列表.");
+	std::list<lpngx_connection_t>::iterator pos;
+	bool iffind = false;
 	CLock lock(&m_recyconnqueueMutex);              //连接回收列表的互斥量，线程ServerRecyConnectionThread()也要用到这个回收列表
+	
+	for(pos = m_recyconnectionList.begin(); pos != m_recyconnectionList.begin(); ++pos)
+	{
+		if((*pos) == pConn)
+		{
+			iffind = true;
+			break;
+		}
+	}
+	
+	if(iffind == true)
+	{
+		return;
+	}
+	
 	pConn->inRecyTime = time(NULL);                 //记录回收时间
 	++pConn->iCurrsequence;
 	m_recyconnectionList.push_back(pConn);          //放入待回收容器，等待ServerRecyConnectionThread线程处理
 	++m_total_recyconnection_n;                     //待释放队列大小+1
+	--m_onlineUserCount;                            //用户在线数量
 	return;
 }
 
@@ -176,7 +198,7 @@ lblRRTD:
 	        		continue;
 	        	}
 	        	
-	        	if(pConn->iThrowsendCount != 0)
+	        	if(pConn->iThrowsendCount > 0)
                 {
                     //这确实不应该，打印个日志吧；
                     ngx_log_stderr(0,"CSocekt::ServerRecyConnectionThread()中到释放时间却发现p_Conn.iThrowsendCount!=0，这个不该发生");
