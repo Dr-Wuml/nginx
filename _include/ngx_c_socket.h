@@ -72,6 +72,7 @@ struct ngx_connection_s
     char                      *psendMemPointer;               //释放发送完的内存
     char                      *psendbuf;                      //发送数据的缓冲区头指针 包头+包体
     unsigned int              isendlen;                       //发送数据长度
+    std::atomic<int>          iSendCount;                     //发送连接中的消息数量
     
     //入到资源回收站的时间
     time_t                    inRecyTime;
@@ -104,6 +105,7 @@ public:
     virtual bool Initialize();                                   //初始化函数[父进程]
     virtual bool Initialize_subproc();                           //初始化函数[子进程]
     virtual void Shutdown_subproc();                             //关闭退出函数[子进程]
+    void printTDInfo();                                          //打印统计信息
     
 public:
 	virtual void threadRecvProcFunc(char *pMsgBuf);                    //处理客户端请求，虚函数，因为将来可以考虑自己来写子类继承本类
@@ -223,6 +225,10 @@ private:
     int                            m_floodAkEnable;              //Flood检测是否开启
     unsigned int                   m_floodTimeInterval;          //每次收到数据包的时间间隔
     int                            m_floodKickCount;             //累计次数阀值
+    
+    //统计相关
+    time_t                         m_lastprintTime;              //记录上次打印的时间
+    int                            m_iDiscardSendPkgCount;       //丢弃的数据包发送数量
 
 };
 #endif //!__NGX_C_SOCKET_H__

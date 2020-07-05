@@ -92,6 +92,17 @@ void CSocket::ngx_event_accept(lpngx_connection_t oldc)
 			close(s);
 			return;
 		}
+		
+		if(m_connectionList.size() > (m_worker_connections *5))
+		{
+			//整个连接池这么大了，而空闲连接却这么少了，认为是  短时间内 产生大量连接，发一个包后就断开，我不能让这种情况持续发生，所以必须断开新入用户的连接
+            //一直到m_freeconnectionList变得足够大【连接池中连接被回收的足够多】
+			if(m_freeconnectionList.size() < m_worker_connections)
+			{
+				close(s);
+				return;
+			}
+		}
 		//accept4成功
 		newc = ngx_get_connection(s);
 		if(newc == NULL)

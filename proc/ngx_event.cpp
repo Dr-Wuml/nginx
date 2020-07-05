@@ -15,6 +15,8 @@
 void ngx_process_events_and_timers()
 {
 	g_socket.ngx_epoll_process_events(-1); //-1表示卡着等待把
+	
+	g_socket.printTDInfo();//信息统计函数可视化
 
     //...再完善
 }

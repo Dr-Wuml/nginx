@@ -18,6 +18,7 @@ public:
 	void StopAll();                                //释放线程池中的所有线程
 	
 	void inMsgRecvQueueAndSignal(char *buf);       //入消息队列，并且触发线程处理
+	int getRecvMsgQueueCount(){return m_iRecvMsgQueueCount;}
 	void Call();                          //任务来时，调用一个空闲线程执行任务
 	
 	

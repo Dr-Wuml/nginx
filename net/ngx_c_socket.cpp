@@ -46,10 +46,13 @@ CSocket::CSocket()
     //队列相关
     m_iSendMsgQueueCount     = 0;      //发消息队列大小
     m_total_recyconnection_n = 0;      //待释放连接队列大小
-    
     m_cur_size_              = 0;      //当前计时队列大小
     m_timer_value_           = 0;      //当前计时队列头部时间值
+    m_iDiscardSendPkgCount    = 0;      //待发送数据包需要丢弃的数量
+    
+    //时间相关
     m_onlineUserCount        = 0;      //用户在线人数
+    m_lastprintTime          = 0;      //上次统计信息打印时间
     return ;
 }
 
@@ -360,7 +363,27 @@ void CSocket::ngx_close_listening_sockets()
 //待发送消息入队列
 void CSocket::msgSend(char *psendbuf)
 {
+	CMemory *pMemory = CMemory::GetInstance();
 	CLock lock(&m_sendMessageQueueMutex);
+	if(m_iSendMsgQueueCount > 50000)
+	{
+		m_iDiscardSendPkgCount++;
+		pMemory->FreeMemory(psendbuf);
+		return;
+	}
+	
+	LPSTRUC_MSG_HEADER pMsgHeader = (LPSTRUC_MSG_HEADER)psendbuf;
+	lpngx_connection_t pConn = pMsgHeader->pConn;
+	if(pConn->iSendCount > 400)
+	{
+		ngx_log_stderr(0,"CSocekt::msgSend()中发现某用户%d积压了大量待发送数据包，切断与他的连接！",pConn->fd);
+		m_iDiscardSendPkgCount++;
+		pMemory->FreeMemory(psendbuf);
+		zdClosesocketProc(pConn);
+		return;
+	}
+	
+	++pConn->iSendCount;
 	m_MsgSendQueue.push_back(psendbuf);
 	++m_iSendMsgQueueCount;
 	if(sem_post(&m_semEventSendQueue) == 1)          //让ServerSendQueueThread()流程走下来干活
@@ -421,6 +444,31 @@ bool CSocket::TestFlood(lpngx_connection_t pConn)
 		reco = true;                    //设置踢人标志
 	}
 	return reco;
+}
+
+void CSocket::printTDInfo()
+{
+	time_t currtime = time(NULL);
+	if((currtime - m_lastprintTime) > 10)
+	{
+		//每隔十秒打印一次
+		int tmprmqc = g_threadpool.getRecvMsgQueueCount();                  //收消息队列
+		m_lastprintTime = currtime;
+		int tmpoLUC = m_onlineUserCount;
+		int tmpsmqc = m_iSendMsgQueueCount;
+		ngx_log_stderr(0,"--------------------------------------begin-------------------------------------------");
+		ngx_log_stderr(0,"当前在线人数/总人数(%d/%d)。",tmpoLUC,m_worker_connections);
+		ngx_log_stderr(0,"连接池中空闲连接/总连接/要释放的连接(%d/%d/%d)。",m_freeconnectionList.size(),m_connectionList.size(),m_recyconnectionList.size());
+		ngx_log_stderr(0,"当前时间队列大小(%d)。",m_timerQueuemap.size());
+		ngx_log_stderr(0,"当前收消息队列/发消息队列大小(%d/%d),丢弃的待发送数据包的大小(%d)。",tmprmqc,tmpsmqc,m_iDiscardSendPkgCount);
+		if(tmprmqc > 100000)
+		{
+			//接收队列过大，报一下，这个属于应该 引起警觉的，考虑限速等等手段
+            ngx_log_stderr(0,"接收队列条目数量过大(%d)，要考虑限速或者增加处理线程数量了！！！！！！",tmprmqc);
+		}
+		ngx_log_stderr(0,"---------------------------------------end--------------------------------------------");
+	}
+	return;
 }
 
 //初始化epoll功能，在子进程调用
@@ -654,7 +702,7 @@ void *CSocket::ServerSendQueueThread(void * threadData)
 	    			pos++;
 	    			continue;
 	    		}
-	    		
+	    		--pConn->iSendCount;
 	    		pConn->psendMemPointer = pMsgBuf;
 	    		pos2 = pos;
 	    		pos++;
@@ -672,6 +720,7 @@ void *CSocket::ServerSendQueueThread(void * threadData)
 	    				pMemory->FreeMemory(pConn->psendMemPointer);                    //释放内存
 	    				pConn->psendMemPointer = NULL;
 	    				pConn->iThrowsendCount = 0;
+	    				
 	    				ngx_log_stderr(0,"CSocekt::ServerSendQueueThread()中数据发送完毕，很好。");  //测试使用
 	    			}
 	    			else
