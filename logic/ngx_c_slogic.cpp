@@ -179,7 +179,7 @@ bool CLogicSocket::_HandlePing(lpngx_connection_t pConn,LPSTRUC_MSG_HEADER pMsgH
 	CLock(&pConn->logicPorcMutex);
 	pConn->lastPingTime = time(NULL);
 	SendNoBodyPkgToClient(pMsgHeader,_CMD_PING);
-	ngx_log_stderr(0,"this is pkg is heartbeat.");
+	//ngx_log_stderr(0,"this is pkg is heartbeat.");
 	return true;
 }
 
@@ -224,38 +224,45 @@ bool CLogicSocket::_HandleRegister(lpngx_connection_t pConn,LPSTRUC_MSG_HEADER p
 	pPkgHeader->crc32 = htonl(pPkgHeader->crc32);
 	//发送数据包
     msgSend(pSendBuf);
-    //如果时机OK才add_event
-    /*if(ngx_epoll_oper_event(pConn->fd,                 //socket句柄
-                            EPOLL_CTL_MOD,
-                            EPOLLOUT,              //读，写 ,这里读为1，表示客户端应该主动给我服务器发送消息，我服务器需要首先收到客户端的消息；
-                            0,                                                      
-                            pConn) == -1)
-                      {
-                           ngx_log_stderr(0,"111111111111!");
-                      }
-    
-
-   /*
-    sleep(100);  //休息这么长时间
-    //如果连接回收了，则肯定是iCurrsequence不等了
-    if(pMsgHeader->iCurrsequence != pConn->iCurrsequence)
-    {
-        //应该是不等，因为这个插座已经被回收了
-        ngx_log_stderr(0,"插座不等,%L--%L",pMsgHeader->iCurrsequence,pConn->iCurrsequence);
-    }
-    else
-    {
-        ngx_log_stderr(0,"插座相等哦,%L--%L",pMsgHeader->iCurrsequence,pConn->iCurrsequence);
-    }*/        
-	
-	
-    ngx_log_stderr(0,"执行了CLogicSocket::_HandleRegister()!");
     return true;
 }
 
 //登录包
 bool CLogicSocket::_HandleLogin(lpngx_connection_t pConn,LPSTRUC_MSG_HEADER pMsgHeader,char *pPkgBody,unsigned short iBodyLength)
 {
-    ngx_log_stderr(0,"执行了CLogicSocket::_HandleLogIn()!");
+    //ngx_log_stderr(0,"执行了CLogicSocket::_HandleLogIn()!");
+    if(pPkgBody == NULL)
+	{
+		return false;
+	}
+	
+	int iRecvLen = sizeof(STRUCT_LOGIN);
+	if(iRecvLen != iBodyLength)
+	{
+		return false;
+	}
+	CLock lock(&pConn->logicPorcMutex);
+	LPSTRUCT_LOGIN pRecvInfo = (LPSTRUCT_LOGIN)pPkgBody;    //取得包体数据
+	pRecvInfo->username[sizeof(pRecvInfo->username) - 1] = 0;
+	pRecvInfo->password[sizeof(pRecvInfo->password) - 1] = 0;
+	
+	//回消息包构造
+	LPCOMM_PKG_HEADER pPkgHeader;
+	CMemory *pMemory  = CMemory::GetInstance();
+	CCRC32  *pCrc32   = CCRC32::GetInstance();
+	int     iSendLen  = sizeof(STRUCT_LOGIN);
+	char    *pSendBuf = (char *)pMemory->AllocMemory(m_iLenMsgHeader+m_iLenPkgHeader+iSendLen,false);
+	memcpy(pSendBuf,pMsgHeader,m_iLenMsgHeader);                  //拷贝消息头
+	pPkgHeader = (LPCOMM_PKG_HEADER)(pSendBuf+m_iLenMsgHeader);  //指向包头
+	pPkgHeader->msgCode = _CMD_LOGIN;                          //消息代码
+	pPkgHeader->msgCode = htons(pPkgHeader->msgCode);             //业务代码,本地序转网络序
+	pPkgHeader->pkgLen  = htons(m_iLenPkgHeader + iSendLen);      //包长度 包头+包体
+	
+	//构造包体
+	LPSTRUCT_LOGIN pSendInfo = (LPSTRUCT_LOGIN)(pSendBuf + m_iLenMsgHeader + m_iLenPkgHeader);
+	//计算包体CRC32值
+	pPkgHeader->crc32 = pCrc32->Get_CRC((unsigned char*)pSendInfo,iSendLen);
+	pPkgHeader->crc32 = htonl(pPkgHeader->crc32);
+	msgSend(pSendBuf);
     return true;
 }

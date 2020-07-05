@@ -277,6 +277,12 @@ bool CSocket::ngx_open_listening_sockets()
             return false;
         }
 
+		int reuseport = 1;
+		if(setsockopt(isock, SOL_SOCKET, SO_REUSEPORT,(const void *) &reuseport, sizeof(int)) == -1)
+		{
+		 	 ngx_log_stderr(errno,"CSocekt::Initialize()中setsockopt(SO_REUSEPORT)失败",i);
+		}
+
         //设置socket为非阻塞
         if(setnonblocking(isock) == false)
         {
