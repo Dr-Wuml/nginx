@@ -123,14 +123,13 @@ void CSocket::ngx_write_request_handler(lpngx_connection_t pConn)
 		 ngx_log_stderr(0,"CSocekt::ngx_write_request_handler()中数据发送完毕，很好。");
 	}
 	
+	pMemory->FreeMemory(pConn->psendMemPointer);
+	pConn->psendMemPointer = NULL;
+	--pConn->iThrowsendCount;
 	if(sem_post(&m_semEventSendQueue) == -1)
 	{
 		 ngx_log_stderr(0,"CSocekt::ngx_write_request_handler()中sem_post(&m_semEventSendQueue)失败.");
 	}
-	pMemory->FreeMemory(pConn->psendMemPointer);
-	pConn->psendMemPointer = NULL;
-	--pConn->iThrowsendCount;
-	
 	return ;
 }
 ssize_t CSocket::recvproc(lpngx_connection_t c,char *buff,ssize_t buflen)     //接收消息
@@ -287,30 +286,7 @@ ssize_t CSocket::sendproc(lpngx_connection_t c,char *buff,ssize_t size)
 		}
 	}
 }
-//消息入队列
-/*void CSocket::inMsgRecvQueue(char *buf,int irmqc)
-{
-	CLock lock(&m_recvMessageQueueMutex);
-	m_MsgRecvQueue.push_back(buf);
-	 ++m_iRecvMsgQueueCount;                  //收消息队列数字+1，个人认为用变量更方便一点，比 m_MsgRecvQueue.size()高效
-    irmqc = m_iRecvMsgQueueCount;            //接收消息队列当前信息数量保存到irmqc
-	//tmpoutMsgRecvQueue();
-	ngx_log_stderr(0,"success收到了一个完整的数据包！");
-	return;
-}
 
-char *CSocket::outMsgRecvQueue() 
-{
-    CLock lock(&m_recvMessageQueueMutex);	//互斥
-    if(m_MsgRecvQueue.empty())
-    {
-        return NULL; //也许会存在这种情形： 消息本该有，但被干掉了，这里可能为NULL的？        
-    }
-    char *sTmpMsgBuf = m_MsgRecvQueue.front(); //返回第一个元素但不检查元素存在与否
-    m_MsgRecvQueue.pop_front();                //移除第一个元素但不返回	
-    --m_iRecvMsgQueueCount;                    //收消息队列数字-1
-    return sTmpMsgBuf;                         
-}*/
 
 //消息处理线程主函数，专门处理各种接收到的TCP消息
 //pMsgBuf：发送过来的消息缓冲区，消息本身是自解释的，通过包头可以计算整个包长
